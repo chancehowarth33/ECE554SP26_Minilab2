@@ -1,96 +1,162 @@
 // image_proc.sv
-// Two-mode Sobel - horizontal and vertical
-//   iMODE = 0 -> use |Gx|  (x-derivative, highlights VERTICAL edges)
-//   iMODE = 1 -> use |Gy|  (y-derivative, highlights HORIZONTAL edges)
-//
-// - Input: 12-bit grayscale stream + iDVAL (640-wide active pixels)
-// - Builds 3x3 window via gray_window_3x3
-// - Output cadence: oDVAL = iDVAL (DO NOT gate frame-buffer writes)
-// - Edge handling: when window invalid, passthrough original gray
+// 3x3 convolution filter for 12-bit grayscale streaming video (640-wide assumed by line buffer)
+// - Uses Gray_Line_Buffer_640 (two taps @ 640) to access y-1 and y-2 rows
+// - Builds full 3x3 window with 2 horizontal delays per row
+// - Does signed filter multiply with UNSIGNED pixel handling (no bad sign-extension)
+// - Computes magnitude as absolute value of convolution sum
+// - Clamps to 12'hFFF
+// - oDVAL is a pipelined version of iDVAL (3 cycles here, matching the internal regs)
 
-module image_proc #(
-    parameter int MAG_SHIFT = 4
-) (
+module image_proc (
     input  logic        iCLK,
-    input  logic        iRST_N,   // active-low reset
-    input  logic        iDVAL,
-    input  logic [11:0] iGRAY,
+    input  logic        iRST,       // active-LOW reset (async, negedge)
+    input  logic [11:0] iPIX12,     // input grayscale pixel (12-bit)
+    input  logic        iDVAL,      // input valid (pixel enable)
+    input  logic        iMODE,      // 0/1 selects filter kernel
 
-    input  logic        iMODE,    // 0: |Gx|, 1: |Gy|
-
-    output logic        oDVAL,
-    output logic [11:0] oPIX12,
-    output logic        oWIN_VALID
+    output logic [11:0] oPIX12,     // output grayscale pixel (12-bit)
+    output logic        oDVAL       // output valid
 );
 
-    // 3x3 window outputs
-    logic win_valid;
-    logic [11:0] w00, w01, w02;
-    logic [11:0] w10, w11, w12;
-    logic [11:0] w20, w21, w22;
-
-    gray_window_3x3 u_win (
-        .iCLK   (iCLK),
-        .iRST_N (iRST_N),
-        .iDVAL  (iDVAL),
-        .iGRAY  (iGRAY),
-        .oValid (win_valid),
-        .w00(w00), .w01(w01), .w02(w02),
-        .w10(w10), .w11(w11), .w12(w12),
-        .w20(w20), .w21(w21), .w22(w22)
-    );
-
-    assign oWIN_VALID = win_valid;
-    assign oDVAL      = iDVAL;
-
-    // Sobel math
-    logic signed [16:0] gx, gy;
-    logic        [16:0] abs_gx, abs_gy;
-    logic        [17:0] mag;
-    logic        [17:0] mag_shifted;
-    logic        [11:0] sobel_pix;
-
-    function automatic [16:0] uabs17(input logic signed [16:0] v);
-        if (v < 0) uabs17 = logic'( -v );
-        else       uabs17 = logic'(  v );
-    endfunction
+    // ----------------------------
+    // 3x3 filter coefficients
+    // ----------------------------
+    logic signed [11:0] k00, k01, k02;
+    logic signed [11:0] k10, k11, k12;
+    logic signed [11:0] k20, k21, k22;
 
     always_comb begin
-        // Cast to signed with an extra 0 MSB so arithmetic is safe
-        logic signed [16:0] s00, s01, s02, s10, s12, s20, s21, s22;
+        k00 = -12'sd1;
+        k01 = iMODE ?  12'sd0 : -12'sd2;
+        k02 = iMODE ?  12'sd1 : -12'sd1;
 
-        s00 = $signed({5'd0, w00});  // 12->17
-        s01 = $signed({5'd0, w01});
-        s02 = $signed({5'd0, w02});
-        s10 = $signed({5'd0, w10});
-        s12 = $signed({5'd0, w12});
-        s20 = $signed({5'd0, w20});
-        s21 = $signed({5'd0, w21});
-        s22 = $signed({5'd0, w22});
+        k10 = iMODE ? -12'sd2 :  12'sd0;
+        k11 =  12'sd0;
+        k12 = iMODE ?  12'sd2 :  12'sd0;
 
-        // Gx: x-derivative (highlights vertical edges)
-        gx = (s02 + (s12 <<< 1) + s22) - (s00 + (s10 <<< 1) + s20);
+        k20 = iMODE ? -12'sd1 :  12'sd1;
+        k21 = iMODE ?  12'sd0 :  12'sd2;
+        k22 =  12'sd1;
+    end
 
-        // Gy: y-derivative (highlights horizontal edges)
-        gy = (s20 + (s21 <<< 1) + s22) - (s00 + (s01 <<< 1) + s02);
+    // ----------------------------
+    // Line buffer
+    // ----------------------------
+    logic [11:0] pix_y1;
+    logic [11:0] pix_y2;
+    logic [11:0] unused_shiftout;
 
-        abs_gx = uabs17(gx);
-        abs_gy = uabs17(gy);
+    Gray_Line_Buffer_640 u_linebuf (
+        .clken   (iDVAL),
+        .clock   (iCLK),
+        .shiftin (iPIX12),
+        .shiftout(unused_shiftout),
+        .taps0x  (pix_y1),
+        .taps1x  (pix_y2)
+    );
 
-        // Select ONE direction (no combining)
-        mag = (iMODE == 1'b0) ? {1'b0, abs_gx} : {1'b0, abs_gy};
+    // ----------------------------
+    // Horizontal delays
+    // ----------------------------
+    logic [11:0] y2_d1, y2_d2;
+    logic [11:0] y1_d1, y1_d2;
+    logic [11:0] y0_d1, y0_d2;
 
-        // scale down for display
-        mag_shifted = (MAG_SHIFT >= 0) ? (mag >> MAG_SHIFT) : mag;
+    always_ff @(posedge iCLK or negedge iRST) begin
+        if (!iRST) begin
+            y2_d1 <= 12'd0; y2_d2 <= 12'd0;
+            y1_d1 <= 12'd0; y1_d2 <= 12'd0;
+            y0_d1 <= 12'd0; y0_d2 <= 12'd0;
+        end else if (iDVAL) begin
+            y2_d2 <= y2_d1;
+            y2_d1 <= pix_y2;
 
-        // clamp to 12-bit range
-        if (mag_shifted[17:12] != 0)
-            sobel_pix = 12'hFFF;
-        else
-            sobel_pix = mag_shifted[11:0];
+            y1_d2 <= y1_d1;
+            y1_d1 <= pix_y1;
 
-        // Edge handling: omit window pixels by passthrough (or set to 0 if you prefer)
-        oPIX12 = win_valid ? sobel_pix : iGRAY;
+            y0_d2 <= y0_d1;
+            y0_d1 <= iPIX12;
+        end
+    end
+
+    // ----------------------------
+    // 3x3 window
+    // ----------------------------
+    logic [11:0] p00, p01, p02;
+    logic [11:0] p10, p11, p12;
+    logic [11:0] p20, p21, p22;
+
+    always_comb begin
+        p00 = y2_d2;  p01 = y2_d1;  p02 = pix_y2;
+        p10 = y1_d2;  p11 = y1_d1;  p12 = pix_y1;
+        p20 = y0_d2;  p21 = y0_d1;  p22 = iPIX12;
+    end
+
+    // ----------------------------
+    // Pipeline registers for pixels + DVAL
+    // ----------------------------
+    logic [11:0] r00, r01, r02, r10, r11, r12, r20, r21, r22;
+    logic        v1, v2, v3;
+
+    always_ff @(posedge iCLK or negedge iRST) begin
+        if (!iRST) begin
+            r00 <= 12'd0; r01 <= 12'd0; r02 <= 12'd0;
+            r10 <= 12'd0; r11 <= 12'd0; r12 <= 12'd0;
+            r20 <= 12'd0; r21 <= 12'd0; r22 <= 12'd0;
+            v1  <= 1'b0;  v2  <= 1'b0;  v3  <= 1'b0;
+        end else begin
+            // DVAL pipeline always advances so cadence matches the stream
+            v1 <= iDVAL;
+            v2 <= v1;
+            v3 <= v2;
+
+            // Only capture new pixels when iDVAL=1
+            if (iDVAL) begin
+                r00 <= p00; r01 <= p01; r02 <= p02;
+                r10 <= p10; r11 <= p11; r12 <= p12;
+                r20 <= p20; r21 <= p21; r22 <= p22;
+            end
+        end
+    end
+
+    assign oDVAL = v3;
+
+    // ----------------------------
+    // Multiply-accumulate
+    // ----------------------------
+    logic signed [19:0] m00, m01, m02, m10, m11, m12, m20, m21, m22;
+    logic signed [23:0] acc;
+    logic signed [23:0] acc_abs;
+
+    always_comb begin
+        m00 = $signed({1'b0, r00}) * k00;
+        m01 = $signed({1'b0, r01}) * k01;
+        m02 = $signed({1'b0, r02}) * k02;
+
+        m10 = $signed({1'b0, r10}) * k10;
+        m11 = $signed({1'b0, r11}) * k11;
+        m12 = $signed({1'b0, r12}) * k12;
+
+        m20 = $signed({1'b0, r20}) * k20;
+        m21 = $signed({1'b0, r21}) * k21;
+        m22 = $signed({1'b0, r22}) * k22;
+
+        acc = m00 + m01 + m02 + m10 + m11 + m12 + m20 + m21 + m22;
+        acc_abs = (acc < 0) ? -acc : acc;
+    end
+
+    // ----------------------------
+    // Output register: clamp to 12-bit
+    // ----------------------------
+    always_ff @(posedge iCLK or negedge iRST) begin
+        if (!iRST) begin
+            oPIX12 <= 12'd0;
+        end else if (v3) begin
+            if (acc_abs > 24'sd4095)
+                oPIX12 <= 12'hFFF;
+            else
+                oPIX12 <= acc_abs[11:0];
+        end
     end
 
 endmodule
