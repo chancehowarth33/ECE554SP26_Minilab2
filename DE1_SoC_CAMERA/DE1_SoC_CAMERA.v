@@ -255,6 +255,10 @@ wire	       [9:0]			oVGA_R;   				//	VGA Red[9:0]
 wire	       [9:0]			oVGA_G;	 				//	VGA Green[9:0]
 wire	       [9:0]			oVGA_B;   				//	VGA Blue[9:0]
 
+////// OUR ADDITIONS ////////
+wire [13:0] gray_sum;   // needs up to 14 bits: R + 2G + B (max 16380)
+wire [11:0] gray12;
+wire        gray_dval;
 //power on start
 wire             				auto_start;
 //=======================================================
@@ -324,6 +328,46 @@ RAW2RGB				u4	(
 							.iY_Cont(Y_Cont)
 						   );
 
+// additions
+assign gray_sum  = {2'b00, sCCD_R} + ({1'b0, sCCD_G, 1'b0}) + {2'b00, sCCD_B}; // R + 2G + B, {1'b0, sCCD_G, 1'b0} is sCCD_G << 1 (2G) with a guard bit.
+assign gray12     = gray_sum[13:2];   // divide by 4, //>>2 divide-by-4, stays 12-bit.
+
+
+/*
+gray_window_3x3 u_win (
+  .iCLK   (D5M_PIXLCLK),
+  .iRST_N (DLY_RST_1),      // active-low reset expected
+  .iDVAL  (sCCD_DVAL),
+  .iGRAY  (gray12),
+  .oValid (win_valid),
+  .w00(w00),.w01(w01),.w02(w02),
+  .w10(w10),.w11(w11),.w12(w12),
+  .w20(w20),.w21(w21),.w22(w22)
+);
+*/
+
+// assign pix12 = win_valid ? w11 : gray12;  // or 12'd0 if you want black border
+// still need to write one switch makes the color to gray scale and another to got to horizontal and another for veritcal
+
+wire [11:0] proc_pix12;
+wire        proc_win_valid;
+wire oDVAL_ip;
+
+image_proc #(.MAG_SHIFT(4)) u_proc (
+  .iCLK      (D5M_PIXLCLK),
+  .iRST_N    (DLY_RST_1),
+  .iDVAL     (sCCD_DVAL),
+  .iGRAY     (gray12),
+  .iMODE     (1'b0), // 0 for horizontal, 1 for vertical, you can add more
+  .oDVAL     (oDVAL_ip),
+  .oPIX12    (proc_pix12),
+  .oWIN_VALID(proc_win_valid) 
+);
+
+
+
+// additions
+
 //Frame count display
 SEG7_LUT_6 			u5	(	
 							.oSEG0(HEX0),.oSEG1(HEX1),
@@ -342,7 +386,38 @@ sdram_pll 			u6	(
 
 						   );
 
+// Changed the write side inputs only
+// Replaced :.WR1_DATA({1'b0,sCCD_G[11:7],sCCD_B[11:2]}),
+//.WR1(sCCD_DVAL),
+//.WR2_DATA({1'b0,sCCD_G[6:2],sCCD_R[11:2]}),
+//.WR2(sCCD_DVAL),
 
+// With:
+//.WR1_DATA({1'b0, gray12[11:7], gray12[11:2]}),
+//.WR1(gray_dval),
+//.WR2_DATA({1'b0, gray12[6:2],  gray12[11:2]}),
+//.WR2(gray_dval),
+
+// to (now using buffer)
+//.WR1_DATA({1'b0, w11[11:7], w11[11:2]}),
+//.WR1(win_valid),
+
+//.WR2_DATA({1'b0, w11[6:2],  w11[11:2]}),
+//.WR2(win_valid),
+
+// to 
+// .WR1_DATA({1'b0, pix12[11:7], pix12[11:2]}),
+// .WR1(gray_dval),
+
+// .WR2_DATA({1'b0, pix12[6:2],  pix12[11:2]}),
+// .WR2(gray_dval),
+
+// NOW WITH CONVOLUTION
+//.WR1_DATA({1'b0, proc_pix12[11:7], proc_pix12[11:2]}),
+//.WR1(gray_dval),
+
+//.WR2_DATA({1'b0, proc_pix12[6:2],  proc_pix12[11:2]}),
+//.WR2(gray_dval),
 
 //SDRam Read and Write as Frame Buffer
 Sdram_Control	   u7	(	//	HOST Side						
@@ -350,8 +425,8 @@ Sdram_Control	   u7	(	//	HOST Side
 							.CLK(sdram_ctrl_clk),
 
 							//	FIFO Write Side 1
-							.WR1_DATA({1'b0,sCCD_G[11:7],sCCD_B[11:2]}),
-							.WR1(sCCD_DVAL),
+							.WR1_DATA({1'b0, proc_pix12[11:7], proc_pix12[11:2]}),
+							.WR1(sCCD_DVAL), // coming from image_proc
 							.WR1_ADDR(0),
                      .WR1_MAX_ADDR(640*480),
 						   .WR1_LENGTH(8'h50),
@@ -359,8 +434,8 @@ Sdram_Control	   u7	(	//	HOST Side
 							.WR1_CLK(~D5M_PIXLCLK),
 
 							//	FIFO Write Side 2
-							.WR2_DATA({1'b0,sCCD_G[6:2],sCCD_R[11:2]}),
-							.WR2(sCCD_DVAL),
+							.WR2_DATA({1'b0, proc_pix12[6:2],  proc_pix12[11:2]}),
+							.WR2(sCCD_DVAL), // coming from image_proc
 							.WR2_ADDR(23'h100000),
 							.WR2_MAX_ADDR(23'h100000+640*480),
 							.WR2_LENGTH(8'h50),
