@@ -58,8 +58,8 @@ module image_proc (
         .clock   (iCLK),
         .shiftin (iPIX12),
         .shiftout(unused_shiftout),
-        .taps0x  (pix_y1),
-        .taps1x  (pix_y2)
+        .taps0x  (pix_y1), // [11:0]
+        .taps1x  (pix_y2) // [12:23]
     );
 
     // ----------------------------

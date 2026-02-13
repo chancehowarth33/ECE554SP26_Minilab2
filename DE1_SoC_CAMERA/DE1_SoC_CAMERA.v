@@ -328,9 +328,9 @@ RAW2RGB				u4	(
 
 
 // declaration for switching logic between
-// SW[0] : 0 = output raw RGB data to SDRAM, 1 = output grayscale data to SDRAM
-// SW[1] : 0 = no convolution, 1 = 3x3 convolution 
-// SW[2] : 0 = horizontal edge detection, 1 = vertical edge detection
+// SW[1] : 0 = output raw RGB data to SDRAM, 1 = output grayscale data to SDRAM
+// SW[2] : 0 = no convolution, 1 = 3x3 convolution 
+// SW[3] : 0 = horizontal edge detection, 1 = vertical edge detection
 
 // declaration for grayscale conversion
 wire [13:0] gray_sum;   // needs up to 14 bits: R + 2G + B (max 16380)
@@ -343,13 +343,13 @@ assign gray12     = gray_sum[13:2];   // divide by 4, //>>2 divide-by-4, stays 1
 
 
 // RGB or grayscale switch to feed into image_proc
-wire gray_enable = SW[0];  // 0=output raw RGB data to SDRAM, 1=output grayscale data to SDRAM
+wire gray_enable = SW[1];  // 0=output raw RGB data to SDRAM, 1=output grayscale data to SDRAM
 
 // declaration for image processing module (convolution and edge detection)
 wire [11:0] proc_out;
 wire        proc_valid;
-wire conv_enable = SW[1];   // 0=bypass , 1=apply Sobel kernel
-wire mode_sel    = SW[2];   // 1 is vertical, 0 is horizontal edge detection
+wire conv_enable = SW[2];   // 0=bypass , 1=apply Sobel kernel
+wire mode_sel    = SW[3];   // 1 is vertical, 0 is horizontal edge detection
 
 // instantiate the image processing module here, connect inputs and outputs
 image_proc u_image_proc (
