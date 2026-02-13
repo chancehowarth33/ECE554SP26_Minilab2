@@ -324,30 +324,43 @@ RAW2RGB				u4	(
 							.iX_Cont(X_Cont),
 							.iY_Cont(Y_Cont)
 						   );
+                     
+
+
+// declaration for switching logic between
+// SW[0] : 0 = output raw RGB data to SDRAM, 1 = output grayscale data to SDRAM
+// SW[1] : 0 = no convolution, 1 = 3x3 convolution 
+// SW[2] : 0 = horizontal edge detection, 1 = vertical edge detection
 
 // declaration for grayscale conversion
 wire [13:0] gray_sum;   // needs up to 14 bits: R + 2G + B (max 16380)
 wire [11:0] gray12;
-wire        gray_dval;
+
 
 // greyscale conversion (R + 2G + B) >> 2
 assign gray_sum  = {2'b00, sCCD_R} + ({1'b0, sCCD_G, 1'b0}) + {2'b00, sCCD_B}; // R + 2G + B, {1'b0, sCCD_G, 1'b0} is sCCD_G << 1 (2G) with a guard bit.
 assign gray12     = gray_sum[13:2];   // divide by 4, //>>2 divide-by-4, stays 12-bit.
-assign gray_dval = sCCD_DVAL;        // pass through the
+
+
+// RGB or grayscale switch to feed into image_proc
+wire gray_enable = SW[0];  // 0=output raw RGB data to SDRAM, 1=output grayscale data to SDRAM
 
 // declaration for image processing module (convolution and edge detection)
 wire [11:0] proc_out;
 wire        proc_valid;
+wire conv_enable = SW[1];   // 0=bypass , 1=apply Sobel kernel
+wire mode_sel    = SW[2];   // 1 is vertical, 0 is horizontal edge detection
 
 // instantiate the image processing module here, connect inputs and outputs
 image_proc u_image_proc (
-    .iCLK   (D5M_PIXLCLK),
-    .iRST   (DLY_RST_1),
-    .iPIX12 (gray12),
-    .iDVAL  (gray_dval),
-    .iMODE  (1'b0), // need to add swtich input for mode control (horizontal/vertical)
-    .oPIX12 (proc_out),
-    .oDVAL  (proc_valid)
+    .iCLK     (D5M_PIXLCLK),
+    .iRST     (DLY_RST_1),     // NOTE: image_proc expects active-LOW reset
+    .iPIX12   (gray12),
+    .iDVAL    (sCCD_DVAL),
+    .iMODE    (mode_sel),
+    .iCONV_EN (conv_enable),
+    .oPIX12   (proc_out),
+    .oDVAL    (proc_valid)
 );
 
 
@@ -381,14 +394,19 @@ sdram_pll 			u6	(
 //.WR2_DATA({1'b0, proc_out[6:2],  proc_out[11:2]}),
 //.WR2(proc_valid),
 
+// Adds in enable to bypass the grey filter and have a choice of RGB or output of image_proc
+//.WR1_DATA(gray_enable ? {1'b0, proc_out[11:7], proc_out[11:2]} : {1'b0, sCCD_G[11:7], sCCD_B[11:2]}),
+//.WR2_DATA(gray_enable ? {1'b0, proc_out[6:2],  proc_out[11:2]} : {1'b0, sCCD_G[6:2], sCCD_R[11:2]}),
+
+
 //SDRam Read and Write as Frame Buffer
 Sdram_Control	   u7	(	//	HOST Side						
 						   .RESET_N(KEY[0]),
 							.CLK(sdram_ctrl_clk),
 
 							//	FIFO Write Side 1
-							.WR1_DATA({1'b0, proc_out[11:7], proc_out[11:2]}),
-							.WR1(proc_valid), // coming from image_proc
+							.WR1_DATA(gray_enable ? {1'b0, proc_out[11:7], proc_out[11:2]} : {1'b0, sCCD_G[11:7], sCCD_B[11:2]}),
+							.WR1(gray_enable ? proc_valid : sCCD_DVAL), // coming from image_proc or raw data
 							.WR1_ADDR(0),
                      .WR1_MAX_ADDR(640*480),
 						   .WR1_LENGTH(8'h50),
@@ -396,8 +414,8 @@ Sdram_Control	   u7	(	//	HOST Side
 							.WR1_CLK(~D5M_PIXLCLK),
 
 							//	FIFO Write Side 2
-							.WR2_DATA({1'b0, proc_out[6:2],  proc_out[11:2]}),
-							.WR2(proc_valid), // coming from image_proc
+							.WR2_DATA(gray_enable ? {1'b0, proc_out[6:2],  proc_out[11:2]} : {1'b0, sCCD_G[6:2], sCCD_R[11:2]}),
+							.WR2(gray_enable ? proc_valid : sCCD_DVAL), // coming from image_proc or raw data
 							.WR2_ADDR(23'h100000),
 							.WR2_MAX_ADDR(23'h100000+640*480),
 							.WR2_LENGTH(8'h50),

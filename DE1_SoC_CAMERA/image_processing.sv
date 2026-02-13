@@ -6,6 +6,11 @@
 // - Computes magnitude as absolute value of convolution sum
 // - Clamps to 12'hFFF
 // - oDVAL is a pipelined version of iDVAL (3 cycles here, matching the internal regs)
+//
+// Added: iCONV_EN
+//   - iCONV_EN = 0: output the CENTER of the 3x3 window (no convolution math)
+//                 (center pixel is r11 = (x-1,y-1) after the window/pipeline regs)
+//   - iCONV_EN = 1: output the convolution magnitude (existing behavior)
 
 module image_proc (
     input  logic        iCLK,
@@ -13,6 +18,7 @@ module image_proc (
     input  logic [11:0] iPIX12,     // input grayscale pixel (12-bit)
     input  logic        iDVAL,      // input valid (pixel enable)
     input  logic        iMODE,      // 0/1 selects filter kernel
+    input  logic        iCONV_EN,   // 0 = window-only (center pixel), 1 = convolution
 
     output logic [11:0] oPIX12,     // output grayscale pixel (12-bit)
     output logic        oDVAL       // output valid
@@ -40,7 +46,8 @@ module image_proc (
     end
 
     // ----------------------------
-    // Line buffer
+    // Line buffer: vertical neighbors at same x
+    // pix_y1 = (x, y-1), pix_y2 = (x, y-2)
     // ----------------------------
     logic [11:0] pix_y1;
     logic [11:0] pix_y2;
@@ -56,7 +63,7 @@ module image_proc (
     );
 
     // ----------------------------
-    // Horizontal delays
+    // Horizontal delays (x-1, x-2) for each row stream
     // ----------------------------
     logic [11:0] y2_d1, y2_d2;
     logic [11:0] y1_d1, y1_d2;
@@ -68,19 +75,22 @@ module image_proc (
             y1_d1 <= 12'd0; y1_d2 <= 12'd0;
             y0_d1 <= 12'd0; y0_d2 <= 12'd0;
         end else if (iDVAL) begin
+            // row y-2 stream
             y2_d2 <= y2_d1;
             y2_d1 <= pix_y2;
 
+            // row y-1 stream
             y1_d2 <= y1_d1;
             y1_d1 <= pix_y1;
 
+            // current row y stream
             y0_d2 <= y0_d1;
             y0_d1 <= iPIX12;
         end
     end
 
     // ----------------------------
-    // 3x3 window
+    // 3x3 window signals
     // ----------------------------
     logic [11:0] p00, p01, p02;
     logic [11:0] p10, p11, p12;
@@ -110,7 +120,7 @@ module image_proc (
             v2 <= v1;
             v3 <= v2;
 
-            // Only capture new pixels when iDVAL=1
+            // Only capture new pixels when iDVAL=1 (matches linebuf shifting)
             if (iDVAL) begin
                 r00 <= p00; r01 <= p01; r02 <= p02;
                 r10 <= p10; r11 <= p11; r12 <= p12;
@@ -122,7 +132,7 @@ module image_proc (
     assign oDVAL = v3;
 
     // ----------------------------
-    // Multiply-accumulate
+    // Multiply-accumulate (pixels forced unsigned before signed multiply)
     // ----------------------------
     logic signed [19:0] m00, m01, m02, m10, m11, m12, m20, m21, m22;
     logic signed [23:0] acc;
@@ -142,20 +152,30 @@ module image_proc (
         m22 = $signed({1'b0, r22}) * k22;
 
         acc = m00 + m01 + m02 + m10 + m11 + m12 + m20 + m21 + m22;
+
+        // magnitude output
         acc_abs = (acc < 0) ? -acc : acc;
     end
 
     // ----------------------------
-    // Output register: clamp to 12-bit
+    // Output register:
+    //   iCONV_EN=0 -> output center of 3x3 window (r11)
+    //   iCONV_EN=1 -> output convolution magnitude (clamped)
     // ----------------------------
     always_ff @(posedge iCLK or negedge iRST) begin
         if (!iRST) begin
             oPIX12 <= 12'd0;
         end else if (v3) begin
-            if (acc_abs > 24'sd4095)
-                oPIX12 <= 12'hFFF;
-            else
-                oPIX12 <= acc_abs[11:0];
+            if (!iCONV_EN) begin
+                // window-only: center pixel of the 3x3 neighborhood
+                oPIX12 <= r11;
+            end else begin
+                // convolution output (existing behavior)
+                if (acc_abs > 24'sd4095)
+                    oPIX12 <= 12'hFFF;
+                else
+                    oPIX12 <= acc_abs[11:0];
+            end
         end
     end
 
