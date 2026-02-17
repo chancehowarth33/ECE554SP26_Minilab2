@@ -1,0 +1,58 @@
+Flow Summary report for DE1_SoC_CAMERA
+Tue Feb 17 14:47:04 2026
+Quartus Prime Version 24.1std.0 Build 1077 03/04/2025 SC Lite Edition
+
+
+---------------------
+; Table of Contents ;
+---------------------
+  1. Legal Notice
+  2. Flow Summary
+
+
+
+----------------
+; Legal Notice ;
+----------------
+Copyright (C) 2025  Altera Corporation. All rights reserved.
+Your use of Altera Corporation's design tools, logic functions 
+and other software and tools, and any partner logic 
+functions, and any output files from any of the foregoing 
+(including device programming or simulation files), and any 
+associated documentation or information are expressly subject 
+to the terms and conditions of the Altera Program License 
+Subscription Agreement, the Altera Quartus Prime License Agreement,
+the Altera IP License Agreement, or other applicable license
+agreement, including, without limitation, that your use is for
+the sole purpose of programming logic devices manufactured by
+Altera and sold by Altera or its authorized distributors.  Please
+refer to the Altera Software License Subscription Agreements 
+on the Quartus Prime software download page.
+
+
+
++-----------------------------------------------------------------------------------+
+; Flow Summary                                                                      ;
++---------------------------------+-------------------------------------------------+
+; Flow Status                     ; Successful - Tue Feb 17 14:44:06 2026           ;
+; Quartus Prime Version           ; 24.1std.0 Build 1077 03/04/2025 SC Lite Edition ;
+; Revision Name                   ; DE1_SoC_CAMERA                                  ;
+; Top-level Entity Name           ; DE1_SoC_CAMERA                                  ;
+; Family                          ; Cyclone V                                       ;
+; Device                          ; 5CSEMA5F31C6                                    ;
+; Timing Models                   ; Final                                           ;
+; Logic utilization (in ALMs)     ; 710 / 32,070 ( 2 % )                            ;
+; Total registers                 ; 1302                                            ;
+; Total pins                      ; 226 / 457 ( 49 % )                              ;
+; Total virtual pins              ; 0                                               ;
+; Total block memory bits         ; 74,656 / 4,065,280 ( 2 % )                      ;
+; Total DSP Blocks                ; 8 / 87 ( 9 % )                                  ;
+; Total HSSI RX PCSs              ; 0                                               ;
+; Total HSSI PMA RX Deserializers ; 0                                               ;
+; Total HSSI TX PCSs              ; 0                                               ;
+; Total HSSI PMA TX Serializers   ; 0                                               ;
+; Total PLLs                      ; 1 / 6 ( 17 % )                                  ;
+; Total DLLs                      ; 0 / 4 ( 0 % )                                   ;
++---------------------------------+-------------------------------------------------+
+
+
