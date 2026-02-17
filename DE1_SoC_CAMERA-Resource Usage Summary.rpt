@@ -1,0 +1,65 @@
+Resource Usage Summary report for DE1_SoC_CAMERA
+Tue Feb 17 17:03:47 2026
+Quartus Prime Version 25.1std.0 Build 1129 10/21/2025 SC Lite Edition
+
+
+---------------------
+; Table of Contents ;
+---------------------
+  1. Legal Notice
+  2. Analysis & Synthesis Resource Usage Summary
+
+
+
+----------------
+; Legal Notice ;
+----------------
+Copyright (C) 2025  Altera Corporation. All rights reserved.
+Your use of Altera Corporation's design tools, logic functions 
+and other software and tools, and any partner logic 
+functions, and any output files from any of the foregoing 
+(including device programming or simulation files), and any 
+associated documentation or information are expressly subject 
+to the terms and conditions of the Altera Program License 
+Subscription Agreement, the Altera Quartus Prime License Agreement,
+the Altera IP License Agreement, or other applicable license
+agreement, including, without limitation, that your use is for
+the sole purpose of programming logic devices manufactured by
+Altera and sold by Altera or its authorized distributors.  Please
+refer to the Altera Software License Subscription Agreements 
+on the Quartus Prime software download page.
+
+
+
++---------------------------------------------------------------------------------------------------------------------------------+
+; Analysis & Synthesis Resource Usage Summary                                                                                     ;
++---------------------------------------------+-----------------------------------------------------------------------------------+
+; Resource                                    ; Usage                                                                             ;
++---------------------------------------------+-----------------------------------------------------------------------------------+
+; Estimate of Logic utilization (ALMs needed) ; 767                                                                               ;
+;                                             ;                                                                                   ;
+; Combinational ALUT usage for logic          ; 1184                                                                              ;
+;     -- 7 input functions                    ; 12                                                                                ;
+;     -- 6 input functions                    ; 239                                                                               ;
+;     -- 5 input functions                    ; 135                                                                               ;
+;     -- 4 input functions                    ; 160                                                                               ;
+;     -- <=3 input functions                  ; 638                                                                               ;
+;                                             ;                                                                                   ;
+; Dedicated logic registers                   ; 1220                                                                              ;
+;                                             ;                                                                                   ;
+; I/O pins                                    ; 226                                                                               ;
+; Total MLAB memory bits                      ; 0                                                                                 ;
+; Total block memory bits                     ; 74656                                                                             ;
+;                                             ;                                                                                   ;
+; Total DSP Blocks                            ; 8                                                                                 ;
+;                                             ;                                                                                   ;
+; Total PLLs                                  ; 4                                                                                 ;
+;     -- PLLs                                 ; 4                                                                                 ;
+;                                             ;                                                                                   ;
+; Maximum fan-out node                        ; sdram_pll:u6|sdram_pll_0002:sdram_pll_inst|altera_pll:altera_pll_i|outclk_wire[0] ;
+; Maximum fan-out                             ; 581                                                                               ;
+; Total fan-out                               ; 11170                                                                             ;
+; Average fan-out                             ; 3.68                                                                              ;
++---------------------------------------------+-----------------------------------------------------------------------------------+
+
+
